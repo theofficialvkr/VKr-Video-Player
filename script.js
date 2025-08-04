@@ -1,4 +1,4 @@
-  function getExtension(url) {
+ function getExtension(url) {
     try {
       return new URL(url).pathname.split('.').pop().toLowerCase();
     } catch {
@@ -111,23 +111,25 @@
 
     const ext = getExtension(url);
 
+    // ✅ YouTube Embed
     if (isYouTube(url)) {
       const ytID = getYouTubeId(url);
       if (ytID) {
         container.innerHTML = buildYouTubeEmbed(ytID);
-        return;
       } else {
         showError("⚠️ Invalid YouTube link.", container);
-        return;
       }
+      return;
     }
 
+    // ✅ Terabox Embed
     const teraboxID = extractTeraboxId(url);
     if (teraboxID) {
       container.innerHTML = buildTeraboxEmbed(teraboxID);
       return;
     }
 
+    // ✅ Direct Media
     if (isDirectMedia(url)) {
       const reachable = await isUrlReachable(url);
       if (!reachable) {
@@ -142,22 +144,32 @@
       return container.innerHTML = buildVideoElement(url, ext);
     }
 
+    // ✅ Try VKR Downloader
     const vkrUrl = await tryVkrDownloader(url);
     if (vkrUrl && isDirectMedia(vkrUrl)) {
       const ext2 = getExtension(vkrUrl);
       return container.innerHTML = buildVideoElement(vkrUrl, ext2);
     }
 
+    // ✅ Fallback iframe
     const iframeId = "vkr-fallback-frame";
+    const statusId = "iframe-status";
     container.innerHTML = `
       <iframe id="${iframeId}" class="iframeVK" src="https://vkrcors.vercel.app/proxy?proxyurl=${encodeURIComponent(url)}" frameborder="0" allowfullscreen></iframe>
-      <p class="loading-messageVK" id="iframe-status">⏳ Trying fallback iframe...</p>`;
+      <p class="loading-messageVK" id="${statusId}">⏳ Trying fallback iframe...</p>`;
+
+    const iframe = document.getElementById(iframeId);
+    const status = document.getElementById(statusId);
+    let iframeLoaded = false;
+
+    iframe.onload = () => {
+      iframeLoaded = true;
+      if (status) status.remove();
+    };
 
     setTimeout(() => {
-      const iframe = document.getElementById(iframeId);
-      const status = document.getElementById("iframe-status");
-      if (iframe && (!iframe.contentDocument || iframe.contentDocument.readyState !== "complete")) {
+      if (!iframeLoaded) {
         showError("❌ Unable to load the video. The source might be protected or blocked.", container);
       }
-    }, 8000); // wait 8 seconds to detect failure
+    }, 8000);
   }
