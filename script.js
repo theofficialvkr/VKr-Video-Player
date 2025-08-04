@@ -1,119 +1,100 @@
-  const directExtensions = ['mp4', 'avi', 'm3u8', 'mpd', 'webm', '3gp', 'mpeg', 'flv', 'wmv', 'mov', 'ogv', 'm4v', 'mp3', 'ogg', 'wav'];
-
   function getExtension(url) {
     try {
-      return url.split('.').pop().split(/[?#]/)[0].toLowerCase();
+      return new URL(url).pathname.split('.').pop().toLowerCase();
     } catch {
-      return '';
+      return "";
     }
   }
 
   function isDirectMedia(url) {
-    return directExtensions.includes(getExtension(url));
+    return /\.(mp4|webm|m3u8|mp3|ogg|wav|mov|avi|flv|mkv|mpd)(\?|$)/i.test(url);
   }
 
   function isYouTube(url) {
-    return /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/.test(url);
+    return /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(url);
   }
 
   function getYouTubeId(url) {
-    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-    return match ? match[1] : null;
+    try {
+      const u = new URL(url);
+      if (u.hostname === 'youtu.be') return u.pathname.slice(1);
+      return u.searchParams.get('v');
+    } catch {
+      return null;
+    }
   }
 
   function extractTeraboxId(url) {
-    const regexes = [
-      /\/s\/([a-zA-Z0-9_\-]+)/,
-      /surl=([a-zA-Z0-9_\-]+)/,
-      /\/[^?]*\/([a-zA-Z0-9_\-]+)/
-    ];
-    for (const pattern of regexes) {
-      const match = url.match(pattern);
-      if (match) {
-        const id = match[1];
-        return id.startsWith('1') ? id.slice(1) : id;
-      }
-    }
-    return null;
-  }
-
-  async function isUrlReachable(url) {
     try {
-      const res = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
-      return res.ok || res.status === 0;
+      const match = url.match(/\/s\/([^\/?#]+)/);
+      return match ? match[1] : null;
     } catch {
-      return false;
+      return null;
     }
-  }
-
-  function showError(message, container) {
-    container.innerHTML = `<p class="error-messageVK">${message}</p>`;
   }
 
   function buildYouTubeEmbed(id) {
-    return `<iframe class="iframeVK" src="https://www.youtube-nocookie.com/embed/${id}" frameborder="0" allowfullscreen></iframe>`;
+    return `<iframe class="iframeVK" src="https://www.youtube.com/embed/${id}" frameborder="0" allowfullscreen></iframe>`;
   }
 
   function buildTeraboxEmbed(id) {
-    return `
-      <div style="overflow:hidden; background:transparent; margin: 5px auto; max-width:100vw; width: 370px;">
-        <iframe align="center" sandbox="allow-same-origin allow-scripts allow-presentation" scrolling="no" allow="fullscreen" 
-          src="https://mdiskplay.com/terabox/${id}" 
-          style="border: 0; margin-left: -320px; height: 324px; margin-top: -110px; background:transparent; width: 1000px;"></iframe>
-      </div>`;
+    return `<iframe class="iframeVK" src="https://www.terabox.com/sharing/embed?surl=${id}" frameborder="0" allowfullscreen></iframe>`;
   }
 
-  function buildVideoElement(url, ext = "mp4") {
-    return `<video class="videoVK" controls><source src="${url}" type="video/${ext}"></video>`;
+  function buildVideoElement(url, ext) {
+    return `<video class="videoVK" src="${url}" controls autoplay></video>`;
   }
 
-  function buildAudioElement(url, ext = "mp3") {
-    return `<audio class="audioVK" controls><source src="${url}" type="audio/${ext}"></audio>`;
+  function buildAudioElement(url, ext) {
+    return `<audio class="audioVK" src="${url}" controls autoplay></audio>`;
   }
 
   function buildHlsPlayer(url) {
     return `
-      <video class="videoVK" id="video-player" controls></video>
+      <video id="hls-video" class="videoVK" controls autoplay></video>
       <script>
-        const video = document.getElementById("video-player");
         if (Hls.isSupported()) {
           const hls = new Hls();
           hls.loadSource("${url}");
-          hls.attachMedia(video);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
-        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = "${url}";
-          video.addEventListener("loadedmetadata", () => video.play());
+          hls.attachMedia(document.getElementById('hls-video'));
+        } else if (document.getElementById('hls-video').canPlayType('application/vnd.apple.mpegurl')) {
+          document.getElementById('hls-video').src = "${url}";
         }
       </script>`;
   }
 
   function buildDashPlayer(url) {
     return `
-      <video class="videoVK" id="video-player" controls></video>
+      <video id="dash-video" class="videoVK" controls autoplay></video>
       <script>
-        const video = document.getElementById("video-player");
         const player = dashjs.MediaPlayer().create();
-        player.initialize(video, "${url}", true);
+        player.initialize(document.getElementById('dash-video'), "${url}", true);
       </script>`;
   }
 
-  function buildFallbackIframe(url) {
-    return `<iframe class="iframeVK" src="https://vkrcors.vercel.app/proxy?proxyurl=${encodeURIComponent(url)}" frameborder="0" allowfullscreen></iframe>`;
+  function showError(message, container) {
+    container.innerHTML = `<p class="error-messageVK">${message}</p>`;
+  }
+
+  async function isUrlReachable(url) {
+    try {
+      const res = await fetch(url, { method: 'HEAD' });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   async function tryVkrDownloader(url) {
     try {
       const response = await fetch(`https://vkrdownloader.xyz/server?api_key=vkrdownloader&vkr=${encodeURIComponent(url)}`);
       const result = await response.json();
-
       if (result?.data?.downloads?.length > 0) {
-        // Pick best one, e.g., first mp4 or highest resolution
         const best = result.data.downloads.find(d => d.url.includes("mp4")) || result.data.downloads[0];
         if (best?.url) return best.url;
       }
     } catch (e) {
-      console.warn("VKR API fallback failed", e);
+      console.warn("VKR Downloader failed:", e);
     }
     return null;
   }
@@ -128,47 +109,55 @@
       return;
     }
 
-    // YouTube
+    const ext = getExtension(url);
+
     if (isYouTube(url)) {
       const ytID = getYouTubeId(url);
       if (ytID) {
         container.innerHTML = buildYouTubeEmbed(ytID);
+        return;
       } else {
         showError("⚠️ Invalid YouTube link.", container);
+        return;
       }
-      return;
     }
 
-    // Terabox
     const teraboxID = extractTeraboxId(url);
     if (teraboxID) {
       container.innerHTML = buildTeraboxEmbed(teraboxID);
       return;
     }
 
-    const ext = getExtension(url);
-
-    // Direct Media File
     if (isDirectMedia(url)) {
       const reachable = await isUrlReachable(url);
       if (!reachable) {
-        showError("❌ Media URL is not reachable. Trying fallback...", container);
-      } else {
-        if (ext === 'm3u8') return container.innerHTML = buildHlsPlayer(url);
-        if (ext === 'mpd') return container.innerHTML = buildDashPlayer(url);
-        if (['mp4', 'webm', 'mov'].includes(ext)) return container.innerHTML = buildVideoElement(url, ext);
-        if (['mp3', 'ogg', 'wav'].includes(ext)) return container.innerHTML = buildAudioElement(url, ext);
-        return container.innerHTML = buildVideoElement(url, ext);
+        showError("❌ Media URL is not reachable or expired.", container);
+        return;
       }
+
+      if (ext === 'm3u8') return container.innerHTML = buildHlsPlayer(url);
+      if (ext === 'mpd') return container.innerHTML = buildDashPlayer(url);
+      if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) return container.innerHTML = buildVideoElement(url, ext);
+      if (['mp3', 'ogg', 'wav'].includes(ext)) return container.innerHTML = buildAudioElement(url, ext);
+      return container.innerHTML = buildVideoElement(url, ext);
     }
 
-    // Try VKR Downloader API
     const vkrUrl = await tryVkrDownloader(url);
     if (vkrUrl && isDirectMedia(vkrUrl)) {
       const ext2 = getExtension(vkrUrl);
       return container.innerHTML = buildVideoElement(vkrUrl, ext2);
     }
 
-    // Final Fallback
-    container.innerHTML = buildFallbackIframe(url);
+    const iframeId = "vkr-fallback-frame";
+    container.innerHTML = `
+      <iframe id="${iframeId}" class="iframeVK" src="https://vkrcors.vercel.app/proxy?proxyurl=${encodeURIComponent(url)}" frameborder="0" allowfullscreen></iframe>
+      <p class="loading-messageVK" id="iframe-status">⏳ Trying fallback iframe...</p>`;
+
+    setTimeout(() => {
+      const iframe = document.getElementById(iframeId);
+      const status = document.getElementById("iframe-status");
+      if (iframe && (!iframe.contentDocument || iframe.contentDocument.readyState !== "complete")) {
+        showError("❌ Unable to load the video. The source might be protected or blocked.", container);
+      }
+    }, 8000); // wait 8 seconds to detect failure
   }
