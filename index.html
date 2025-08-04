@@ -1,59 +1,140 @@
-<!DOCTYPE html>
-<html lang="en">
+<!DOCTYPE html><html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Video Player</title>
+  <meta name="theme-color" content="#111111" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.png" type="image/png">
+  <title>Smart Video Player</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
   <style>
+    * { box-sizing: border-box; }
     body {
-      background-color: #111;
+      margin: 0;
+      background-color: #0f0f0f;
       color: #fff;
-      font-family: Arial, sans-serif;
-    }
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }.media-containerVK {
+  width: 95%;
+  max-width: 900px;
+  background: #1a1a1a;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+}
 
-    .media-containerVK {
-      width: 100%;
-      max-width: 800px;
-      margin: 20px auto;
-      background: #222;
-      border-radius: 8px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-      overflow: hidden;
-    }
+h2 {
+  text-align: center;
+  font-size: 24px;
+  margin-bottom: 10px;
+  color: #00f5ff;
+}
 
-    .videoVK, .iframeVK {
-      display: block;
-      border: none;
-      border-radius: 8px;
-      max-height: 500px;
-      width: 100%;
-      height: 500px;
-    }
+input, button {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  margin-top: 10px;
+  font-size: 16px;
+}
 
-    select {
-      margin-top: 10px;
-      background: black;
-      color: white;
-      padding: 5px;
-    }
+input {
+  background-color: #333;
+  color: white;
+}
 
-    .hidden {
-      display: none !important;
-    }
+button {
+  background-color: #00f5ff;
+  color: #000;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+button:hover {
+  background-color: #0ff;
+}
+
+.videoVK, .iframeVK {
+  display: block;
+  border: none;
+  border-radius: 8px;
+  max-height: 500px;
+  width: 100%;
+  height: 500px;
+  margin-top: 20px;
+}
+
+.hidden { display: none !important; }
+
   </style>
 </head>
 <body>
-  <div class="flex justify-center items-center min-h-screen">
-    <div style="width: 90%;" class="media-containerVK" id="media-container">
-      <h2 style="text-align:center;">Video Player</h2>
-      <input type="text" id="media-url" placeholder="Enter media URL" style="width: 100%; padding: 10px;"/>
-      <button onclick="loadMedia()" style="width: 100%; padding: 10px; margin-top: 10px;">Load Video</button>
-      <div id="player-output" style="margin-top: 20px;"></div>
-    </div>
-  </div>
+  <div class="media-containerVK">
+    <h2>🎥 Smart Video Player</h2>
+    <input type="text" id="media-url" placeholder="Enter media or Instagram/FB URL" />
+    <button onclick="loadMedia()">Load Video</button>
+    <div id="player-output"></div>
+  </div>  <script>
+    async function loadMedia() {
+      const url = document.getElementById('media-url').value.trim();
+      const output = document.getElementById('player-output');
+      output.innerHTML = '<p>Loading... Please wait.</p>';
 
-  <script src="script.js" defer> </script>
-</body>
+      try {
+        // Direct playable file
+        if (url.match(/\.(mp4|webm|m3u8|mp3|mpd|mov|m4a)(\?.*)?$/)) {
+          output.innerHTML = `<video class="videoVK" controls autoplay id="video-player"></video>`;
+          const video = document.getElementById('video-player');
+
+          if (url.endsWith(".m3u8") && Hls.isSupported()) {
+            const hls = new Hls();
+            hls.loadSource(url);
+            hls.attachMedia(video);
+          } else if (url.endsWith(".mpd")) {
+            const player = dashjs.MediaPlayer().create();
+            player.initialize(video, url, true);
+          } else {
+            video.src = url;
+          }
+          return;
+        }
+
+        // Check VKRDownloader API fallback
+        const vkrRes = await fetch(`https://vkrdownloader.onrender.com/api?url=${encodeURIComponent(url)}`);
+        const vkrData = await vkrRes.json();
+
+        if (vkrData?.video_url) {
+          output.innerHTML = `<video class="videoVK" src="${vkrData.video_url}" controls autoplay></video>`;
+          return;
+        }
+
+        // If not resolved, fallback to iframe (Instagram, Facebook etc.)
+        output.innerHTML = `<iframe class="iframeVK" src="${url}" allowfullscreen></iframe>`;
+
+        // Check iframe load status
+        setTimeout(() => {
+          const iframe = document.querySelector(".iframeVK");
+          if (!iframe?.contentWindow || iframe.contentDocument?.readyState !== "complete") {
+            output.innerHTML = '<p style="color: red;">Failed to load video or unsupported source.</p>';
+          }
+        }, 5000);
+
+      } catch (err) {
+        output.innerHTML = `<p style="color:red">Error loading video: ${err.message}</p>`;
+      }
+    }
+  </script>  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(() => {
+        console.log('Service Worker Registered');
+      });
+    }
+  </script></body>
 </html>
